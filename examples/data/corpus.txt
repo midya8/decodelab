@@ -1,0 +1,8 @@
+The model learns from data. The data teaches the model. A good model generalizes well.
+The tokenizer splits text into tokens. Tokens feed the model. The model predicts tokens.
+Training reduces the loss. The loss guides the optimizer. The optimizer updates the weights.
+Evaluation measures the model. Metrics measure the evaluation. Good metrics guide training.
+The agent plans each step. Each step uses a tool. Tools return results to the agent.
+Search finds the nearest vectors. Vectors represent the tokens. The index stores the vectors.
+Sampling adds variety to text. Greedy decoding picks the best token. Beam search keeps many paths.
+The pipeline validates every claim. Claims need sources. Sources ground the claims.
