@@ -116,7 +116,23 @@ def main(argv: list[str] | None = None) -> int:
             p.add_argument("--markdown", dest="markdown_path", default=None)
             p.add_argument("--min-distinct-2", type=float, default=None)
             p.add_argument("--max-repetition", type=float, default=None)
+    audit = sub.add_parser("audit", help="enumerate a bounded synthetic continuation tree and beam witnesses")
+    audit.add_argument("--spec", help="strict JSON table/config spec; default is original synthetic table")
+    audit.add_argument("--json", dest="audit_json", help="write full audit JSON")
     args = parser.parse_args(argv)
+    if args.command == "audit":
+        from .audit import build_audit, read_spec
+        try:
+            result = read_spec(args.spec) if args.spec else build_audit()
+            body = json.dumps(result, indent=2, sort_keys=True, allow_nan=False)+"\n"
+            if args.audit_json:
+                with open(args.audit_json, "w", encoding="utf-8") as fh:
+                    fh.write(body)
+            print(body, end="")
+            return 0
+        except (ValueError, TypeError, OSError) as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 2
     return cmd_generate(args) if args.command == "generate" else cmd_compare(args)
 
 
