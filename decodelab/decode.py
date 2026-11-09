@@ -9,6 +9,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 import random
+import math
+
+from .filtering import sampling_trace
 
 from .model import NGramModel
 
@@ -21,34 +24,19 @@ class DecodingConfig:
     top_p: float | None = None
 
     def __post_init__(self) -> None:
-        if self.max_tokens < 1:
-            raise ValueError("max_tokens must be >= 1")
-        if self.temperature <= 0:
-            raise ValueError("temperature must be > 0")
-        if self.top_k is not None and self.top_k < 1:
-            raise ValueError("top_k must be >= 1")
-        if self.top_p is not None and not 0 < self.top_p <= 1:
-            raise ValueError("top_p must be in (0, 1]")
+        if type(self.max_tokens) is not int or self.max_tokens < 1:
+            raise ValueError("max_tokens must be an integer >= 1")
+        if isinstance(self.temperature, bool) or not isinstance(self.temperature, (int, float)) or not math.isfinite(self.temperature) or self.temperature <= 0:
+            raise ValueError("temperature must be finite and > 0")
+        if self.top_k is not None and (type(self.top_k) is not int or self.top_k < 1):
+            raise ValueError("top_k must be an integer >= 1")
+        if self.top_p is not None and (isinstance(self.top_p, bool) or not isinstance(self.top_p, (int, float)) or not math.isfinite(self.top_p) or not 0 < self.top_p <= 1):
+            raise ValueError("top_p must be finite and in (0, 1]")
 
 
 def _filtered(dist: dict[str, float], config: DecodingConfig) -> dict[str, float]:
-    """Apply temperature, top-k and top-p, then renormalize."""
-    items = sorted(dist.items(), key=lambda kv: (-kv[1], kv[0]))
-    if config.temperature != 1.0:
-        items = [(t, p ** (1.0 / config.temperature)) for t, p in items]
-    if config.top_k is not None:
-        items = items[: config.top_k]
-    if config.top_p is not None:
-        kept: list[tuple[str, float]] = []
-        cumulative = 0.0
-        for tok, p in items:
-            if kept and cumulative >= config.top_p:
-                break
-            kept.append((tok, p))
-            cumulative += p
-        items = kept
-    total = sum(p for _, p in items)
-    return {t: p / total for t, p in items}
+    """Stable staged sampling; see sampling_trace for all intermediate values."""
+    return sampling_trace(dist, config)["output"]
 
 
 def greedy(model: NGramModel, prompt: list[str], config: DecodingConfig | None = None) -> list[str]:
@@ -92,35 +80,49 @@ def sample(
     return tokens
 
 
-def beam_search(
-    model: NGramModel,
-    prompt: list[str],
-    beam_width: int,
-    config: DecodingConfig | None = None,
-) -> list[list[str]]:
-    """Beam search by total log probability. Returns finished + live beams,
-    best first; each beam includes the prompt."""
-    import math
+def beam_trace(model: NGramModel, prompt: list[str], beam_width: int,
+               config: DecodingConfig | None = None, *, record: bool = True) -> dict:
+    """Full expansion/pruning witnesses for unfiltered model log probability.
 
-    if beam_width < 1:
-        raise ValueError("beam_width must be >= 1")
+    Finished EOS hypotheses stay in the beam. Cap-censored hypotheses have no
+    EOS factor. Temperature/top-k/top-p are sampling-only and ignored here.
+    """
+    if type(beam_width) is not int or beam_width < 1:
+        raise ValueError("beam_width must be an integer >= 1")
     config = config or DecodingConfig()
-    # (tokens, logprob, finished)
-    beams: list[tuple[list[str], float, bool]] = [(list(prompt), 0.0, False)]
-    for _ in range(config.max_tokens):
-        candidates: list[tuple[list[str], float, bool]] = []
-        for tokens, logprob, finished in beams:
-            if finished:
-                candidates.append((tokens, logprob, True))
+    beams = [{"tokens": list(prompt), "log_probability": 0.0, "finished": False}]
+    history = []
+    expanded = 0
+    for step in range(config.max_tokens):
+        candidates = []
+        for parent, beam in enumerate(beams):
+            if beam["finished"]:
+                candidates.append(dict(beam, parent=parent, emitted=None))
                 continue
-            dist = model.distribution(tokens)
-            for tok, p in sorted(dist.items(), key=lambda kv: (-kv[1], kv[0]))[: max(beam_width * 2, 4)]:
-                if tok == NGramModel.END:
-                    candidates.append((tokens, logprob + math.log(p), True))
-                else:
-                    candidates.append((tokens + [tok], logprob + math.log(p), False))
-        candidates.sort(key=lambda b: (-b[1], b[0]))
+            items = sorted(model.distribution(beam["tokens"]).items(), key=lambda x: (-x[1], x[0]))
+            if not record:
+                items = items[:max(beam_width * 2, 4)]
+            for token, p in items:
+                if p <= 0:
+                    continue
+                candidates.append({"tokens": beam["tokens"] + ([] if token == NGramModel.END else [token]),
+                                   "log_probability": beam["log_probability"] + math.log(p),
+                                   "finished": token == NGramModel.END,
+                                   "parent": parent, "emitted": token})
+        expanded += len(candidates)
+        if record and expanded > 100000:
+            raise ValueError("beam witness exceeds 100000 candidate records")
+        candidates.sort(key=lambda b: (-b["log_probability"], b["tokens"], not b["finished"]))
         beams = candidates[:beam_width]
-        if all(f for _, _, f in beams):
+        if record:
+            history.append({"step": step+1, "candidates": candidates, "survivors": beams})
+        if all(b["finished"] for b in beams):
             break
-    return [tokens for tokens, _, _ in beams]
+    return {"beams": beams, "steps": history,
+            "objective": "unfiltered conditional continuation log probability; EOS scored, cap censored"}
+
+
+def beam_search(model: NGramModel, prompt: list[str], beam_width: int,
+                config: DecodingConfig | None = None) -> list[list[str]]:
+    """Compatibility output. Use beam_trace to distinguish EOS from the cap."""
+    return [b["tokens"] for b in beam_trace(model, prompt, beam_width, config, record=False)["beams"]]
