@@ -24,9 +24,9 @@ class NGramModel:
     END = "</s>"
 
     def __init__(self, order: int, k: float = 0.1) -> None:
-        if order < 1:
+        if type(order) is not int or order < 1:
             raise ValueError("order must be >= 1")
-        if k <= 0:
+        if isinstance(k, bool) or not isinstance(k, (int, float)) or not math.isfinite(k) or k <= 0:
             raise ValueError("k must be > 0")
         self.order = order
         self.k = k
@@ -68,6 +68,8 @@ class NGramModel:
         if not self._vocab:
             raise ValueError("model is not trained")
         context = tuple(context)[-(self.order - 1):] if self.order > 1 else ()
+        if len(context) < self.order - 1:
+            context = (self.START,) * (self.order - 1 - len(context)) + context
         counts = self._counts.get(context, {})
         total = sum(counts.values()) + self.k * (len(self._vocab) + 1)
         dist = {tok: (counts.get(tok, 0) + self.k) / total for tok in self._vocab}
