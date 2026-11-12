@@ -1,42 +1,48 @@
 # DecodeLab
 
-Inspectable decoding from scratch: stable staged sampling, complete small continuation trees, and beam pruning witnesses. Dependency-free Python, independent scalar JavaScript, no model API.
+DecodeLab shows how temperature, top-k, top-p and beam search change a small language-model continuation. It retains every sampling stage, finite outcome and beam-pruning decision so that probability, model score and stopping rules can be checked separately. Dependency-free Python and independent scalar JavaScript run offline, without a model API.
 
-Temperature reshapes probability. Top-k and top-p remove mass. Beam search removes futures. DecodeLab makes those operations inspectable rather than calling the highest-probability text the best text.
+[Live inspector](https://midya8.github.io/decodelab/) · [Numerical rules and limits](AUDIT.md)
 
-## Probability audit
+## Sampling: normalize before selecting a nucleus
 
-The sampler uses stable log-probability temperature scaling, then normalized top-k and normalized nucleus selection. `sampling_trace` exposes every distribution and retained-mass cutoff. This fixes the earlier unnormalized nucleus test and direct-power underflow. Short n-gram contexts now use the same start padding as training.
+The sampler applies stable log-probability temperature scaling, normalizes, applies top-k and normalizes again, then selects the smallest top-p prefix reaching the threshold. `sampling_trace` returns each distribution and its retained-mass cutoff. Equal sampling probabilities use lexical token order; other libraries can use different ties and filter rules.
 
-The finite-tree audit distinguishes EOS termination from generation-cap censoring, filtered sampling probability from original model score, and beam pruning from an exhaustive oracle with the same objective. One original synthetic fixture shows a lost better future. A second shows width2 losing a path preserved by widths1/3 under the stated shared finished/live beam.
+The earlier sampler selected the nucleus from unnormalized powers. With probabilities `(0.6, 0.3, 0.1)`, temperature 0.5 and top-p 0.7, those powers sum to 0.46, so it kept every token. After normalization the first token alone has about 0.7826 mass and is the complete nucleus. The current log-space calculation also avoids all-event direct-power underflow, although tiny tails can still round to zero.
 
-```sh
-python -m decodelab audit --json audit.json
-python -m decodelab audit --spec spec.json --json audit.json
-python -m tools.build_audit --check
-```
+## Paths: distinguish EOS from a generation cap
 
-The `docs` site runs independent scalar JavaScript. Edit transition weights, temperature, top-k, top-p, generation cap and prompt. Inspect every probability stage, paginate every finite outcome, follow every beam candidate and export the current audit. Nothing calls a model service.
+The finite-tree audit enumerates all filtered continuations within explicit bounds. EOS contributes its probability and stops; a capped path does not invent an EOS event. Filtered sampling probability and unfiltered model log score are reported separately. The prompt is conditioned on, not included in continuation scores.
+
+Beam traces show every candidate, parent and survivor. Finished and live paths share the same beam, scored by unfiltered conditional log probability, with no length penalty or separate finished pool. The exhaustive oracle uses the same EOS/cap objective.
+
+One synthetic control loses a better future at width 1. Another retains the oracle at widths 1 and 3 but loses it at width 2. That width counterexample depends on the stated shared-pool algorithm, not every beam implementation. A higher model score does not establish better writing.
+
+The browser lets you edit transition weights, temperature, top-k, top-p, generation cap and prompt. It shows each probability stage, paginates every outcome, lists beam candidates and exports the complete current audit.
 
 ## Original corpus-trained decoder
 
-The original add-k n-gram model, tokenizer, generation/compare CLI, diversity metrics, reports and gate examples remain. All 36 original tests are unchanged. Sampling results intentionally change where corrected normalization or start padding changes the policy; the original exact-output greedy/demo assertions still pass.
+The add-k n-gram model, tokenizer, generation/compare commands, diversity metrics, reports and gate examples remain. All 36 original tests are unchanged. Short contexts now use the same start padding as training. Corrected normalization and padding intentionally change affected sampling or short-prompt outputs; the original fixed greedy/demo assertions still pass.
 
 ```sh
-python -m decodelab generate --corpus corpus.txt --strategy greedy --prompt "the tokenizer"
-python -m decodelab generate --corpus corpus.txt --strategy sample --prompt "the" --temperature 0.9 --top-p 0.9 --seed 9
-python -m decodelab generate --corpus corpus.txt --strategy beam --prompt "the" --beam-width 3
-python -m decodelab compare --corpus corpus.txt --prompt "the tokenizer" --json report.json --markdown report.md --max-repetition 0.5
+python -m pip install .
+python -m decodelab audit --json audit.json
+python -m decodelab audit --spec spec.json --json audit.json
+python -m decodelab generate --corpus examples/data/corpus.txt --strategy greedy --prompt "the tokenizer"
+python -m decodelab generate --corpus examples/data/corpus.txt --strategy sample --prompt "the" --temperature 0.9 --top-p 0.9 --seed 9
+python -m decodelab generate --corpus examples/data/corpus.txt --strategy beam --prompt "the" --beam-width 3
+python -m decodelab compare --corpus examples/data/corpus.txt --prompt "the tokenizer" --json report.json --markdown report.md --max-repetition 0.5
 ```
 
-Distinct-n, repetition rate and unigram entropy describe output form, not factuality or coherence. A common seed makes each implementation reproducible; it does not isolate a causal effect or make one sample representative of a distribution. The n-gram model is an offline stand-in, not a modern language model.
+Distinct-n, repetition rate and unigram entropy describe output form, not factuality or coherence. A common seed makes an implementation reproducible; it does not isolate a causal effect or make one sample representative of a distribution. The n-gram model is an offline stand-in, not a modern language model.
 
-## Verification
+## Checks
 
-- 54 Python tests, including the 36 original tests; independent 90-digit Decimal sampling reference, rational path products and rational forward probability audits on 40 random tables.
-- 32 retained full tree/beam audits and 120 staged-distribution cases.
-- Three Node/Chrome tests: 7,927 independent numerical comparisons; 96 distribution views, 231 displayed outcome rows, 956 beam-candidate rows, export/invalidation checks and 320/390/1280 widths.
-- Installed-wheel reproduction outside the checkout and Python3.10-3.13 CI.
+The suite has 54 Python tests, including the 36 original tests. Independent references use 90-digit Decimal sampling powers, rational path products and rational forward probability audits on 40 random tables. Checked-in evidence contains 32 complete tree/beam audits and 120 staged-distribution cases.
+
+Three Node/actual-Chrome tests check 7,927 numerical comparisons, 96 distribution views, 231 displayed outcome rows and 956 beam-candidate rows, plus export, stale/invalid state and 320/390/1280 containment. These are floating-point comparisons within documented tolerances, not exact real-arithmetic proofs.
+
+The installed-wheel check runs outside the checkout, verifies five module origins, reproduces 32 table audits and exercises the nucleus/width controls and both audit and original generation commands. CI covers Python 3.10-3.13.
 
 ```sh
 python -m unittest discover -s tests -v
@@ -44,8 +50,13 @@ bash examples/demo.sh
 python -m tools.build_audit --check
 node --test tests/*.cjs
 bash examples/verify_wheel.sh
+python -m http.server 8000 --directory docs
 ```
 
-Read [AUDIT.md](AUDIT.md) for exact API, filtering/tie rules, EOS/cap objective, bounds, counterexamples and prior sources. Exhaustive trees are exponential and bounded. Floating-point results are checked within tolerances, not exact real arithmetic. No new decoding algorithm or language-quality improvement is claimed.
+Node 22+ and Chrome are needed for browser checks; the wheel script uses `uv`.
 
-MIT. Implementation and original synthetic audits by Midya Rahmani; established temperature, nucleus and beam methods are attributed in the contract and demo.
+## Limits and prior work
+
+Exhaustive trees are exponential. The Python enumerator has explicit depth, vocabulary and node limits and refuses overflow rather than returning partial evidence. The browser is limited to two symbols, six generation steps and beam widths 1-3. Very small probability products can underflow. Cutoffs close to a boundary can differ across arithmetic implementations.
+
+[AUDIT.md](AUDIT.md) records the exact API, tie/filter rules, strict table specification, EOS/cap objective, counterexamples and prior sources. Temperature, nucleus sampling and beam search are established methods. This project does not claim a new decoder or improved language quality. Implementation and original synthetic audits: Midya Rahmani. MIT license.
