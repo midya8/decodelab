@@ -1,6 +1,6 @@
 # DecodeLab probability and search contract
 
-This is an educational implementation of established decoding methods. The synthetic tables are original counterexamples, not a corpus evaluation or a new algorithm.
+Given a small transition table, DecodeLab records how filtering changes its probabilities and how beam search removes possible continuations. This note defines the sampling order, stopping events, beam objective and input bounds. The synthetic tables are original counterexamples, not a corpus evaluation or a new algorithm.
 
 ## Sampling pipeline
 
@@ -39,7 +39,7 @@ Both beam fixtures use counts/weights in `[a,b,EOS]` order:
 | a | 34,33,33 | 45,60,77 |
 | b | 1,1,98 | 54,47,5 |
 
-At horizon 3, fixture one has oracle `b + EOS` with probability 0.3822. Width1 ends at cap with `a a a` and log-score gap 1.7066336993338855. Width2/3 attain the oracle. In fixture two the oracle is `a + EOS` with probability 0.1940719830628088. Width1/3 attain it; width2 prunes it and ends with capped `b b a`, log-score gap 0.6275452747266899. The width counterexample depends on this stated shared-pool algorithm, not all beam implementations. Higher model probability is not necessarily better text.
+At horizon 3, fixture one has oracle `b + EOS` with probability 0.3822. Width 1 ends at cap with `a a a` and log-score gap 1.7066336993338855. Widths 2 and 3 attain the oracle. In fixture two the oracle is `a + EOS` with probability 0.1940719830628088. Widths 1 and 3 attain it; width 2 prunes it and ends with capped `b b a`, log-score gap 0.6275452747266899. The width counterexample depends on this stated shared-pool algorithm, not all beam implementations. Higher model probability is not necessarily better text.
 
 ## Strict table CLI
 
@@ -48,7 +48,7 @@ python -m decodelab audit --json audit.json
 python -m decodelab audit --spec spec.json --json audit.json
 ```
 
-A spec has only `counts`, `config`, `prompt` and `widths`. Counts require exactly start/a/b rows, each three nonnegative integer weights at most one million and positive total. Prompts use a/b only. Widths are 1-8 values in 1-32. JSON is limited to 128 KiB and rejects duplicate keys and nonfinite constants. Errors return status2. No partial audit is written on an invalid spec. A complete existing output is overwritten only on a valid audit; this CLI is not an atomic archival store.
+A spec has only `counts`, `config`, `prompt` and `widths`. Counts require exactly start/a/b rows, each three nonnegative integer weights at most one million and positive total. Prompts use a/b only. Widths are 1-8 values in 1-32. JSON is limited to 128 KiB and rejects duplicate keys and nonfinite constants. Errors return status 2. No partial audit is written on an invalid spec. A complete existing output is overwritten only on a valid audit; this CLI is not an atomic archival store.
 
 Example spec:
 
@@ -70,7 +70,7 @@ The original 36 tests remain byte-for-byte. New tests compare 120 staged distrib
 
 `docs/audit.json` retains 32 complete audits (two tables, four horizons, four filter configurations) and 120 staged cases. Separate scalar JavaScript checks 7,927 numerical fields. Actual Chrome tests inspect 96 distribution views, every displayed outcome across 231 rows, 956 beam-candidate rows, one JSON export, stale-on-edit behavior and 320/390/1280 layout bounds. Near-tied displayed path ordering is checked as decreasing probability within numerical tolerance, then records are matched by tokens plus stop state, rather than demanding bitwise cross-language sorting.
 
-An installed wheel is checked outside the checkout: five module origins, 32 table audits, the nucleus and nonmonotone-width controls, the JSON CLI and original generation CLI. CI runs Python3.10-3.13, Chrome and isolated installation. These are tested numerical examples, not universal correctness proofs.
+An installed wheel is checked outside the checkout: five module origins, 32 table audits, the nucleus and nonmonotone-width controls, the JSON CLI and original generation CLI. CI runs Python 3.10-3.13, Chrome and isolated installation. These are tested numerical examples, not universal correctness proofs.
 
 ## Sources
 
