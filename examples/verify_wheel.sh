@@ -13,7 +13,7 @@ import importlib,json,pathlib
 from decodelab.audit import build_audit,NONMONOTONE
 from decodelab.decode import DecodingConfig
 from decodelab.filtering import sampling_trace
-for name in ['decodelab.decode','decodelab.model','decodelab.filtering','decodelab.paths','decodelab.audit']:
+for name in ['decodelab.decode','decodelab.model','decodelab.filtering','decodelab.paths','decodelab.audit','decodelab.stopping']:
     p=pathlib.Path(importlib.import_module(name).__file__)
     assert 'site-packages' in p.parts,p
 for table in [None,NONMONOTONE]:
@@ -24,9 +24,13 @@ for table in [None,NONMONOTONE]:
 assert sampling_trace({'a':.6,'b':.3,'c':.1},DecodingConfig(temperature=.5,top_p=.7))['output']=={'a':1}
 a=build_audit(NONMONOTONE)
 assert [b['attains_oracle_score'] for b in a['beams']]==[True,False,True]
-print(json.dumps({'installed_modules':5,'audit_cases':32,'nonmonotone_widths':[True,False,True]}))
+print(json.dumps({'installed_modules':6,'audit_cases':32,'nonmonotone_widths':[True,False,True]}))
 PY
 "$tmp/env/bin/python" -m decodelab audit --json "$tmp/audit.json" > "$tmp/stdout.json"
 cmp "$tmp/audit.json" "$tmp/stdout.json"
 printf 'a b. a a. b a.\n' > "$tmp/corpus.txt"
 "$tmp/env/bin/python" -m decodelab generate --corpus "$tmp/corpus.txt" --strategy greedy --prompt a --max-tokens 4
+
+# Imports resolve from the installed wheel while the independent references
+# run outside the checkout. These include all 144 Cartesian laws and cap128.
+"$tmp/env/bin/python" "$root/tests/test_stopping.py" -v
