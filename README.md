@@ -20,6 +20,41 @@ One synthetic control loses a better future at width 1. Another retains the orac
 
 The browser lets you edit transition weights, temperature, top-k, top-p, generation cap and prompt. It shows each probability stage, paginates every outcome, lists beam candidates and exports the complete current audit.
 
+## Stopping lengths without enumerating every string
+
+```python
+from decodelab.stopping import stopping_law
+
+law = stopping_law(
+    {"start": [2, 3, 5], "a": [2, 3, 5], "b": [2, 3, 5]},
+    prompt=[], cap=128,
+)
+print(law["expected_generated_tokens"])  # exact rational string
+```
+
+This separate API uses the supplied integer table weights as exact ratios. It
+propagates live mass through `start`, `a` and `b`, rather than listing every
+continuation. Each decision records every state/token probability and flow,
+EOS mass and surviving state mass. It returns the complete capped length law,
+its exact mean and variance, and separate EOS/cap probabilities. At most six
+edges are processed per decision after the initial row. Rational arithmetic
+cost grows with the integer sizes; this is not a speed benchmark.
+
+EOS ends a path without emitting an ordinary token. Surviving mass after the
+last decision belongs at length `cap`, without an extra EOS factor. The
+prompt is conditioned on, not generated or scored. Caps from 1 to 128 are
+supported. An all-non-EOS table remains entirely cap-censored; the result does
+not infer its infinite-horizon stopping behavior.
+
+This is deliberately **unfiltered**. It is not the exact law of the floating
+log/exp temperature, top-k or nucleus pipeline, and does not replace its
+existing trace or exhaustive oracle. There is no new CLI or browser control.
+Five new tests compare 144 random-table/prompt laws with independent Cartesian
+path products, replay every flow, and check geometric, immediate-EOS,
+never-EOS, row-scaling and prompt controls. The geometric control runs to
+cap 128. The installed-package check runs these same five tests outside the
+checkout. Existing fixture bytes and browser comparisons are unchanged.
+
 ## Original corpus-trained decoder
 
 The add-k n-gram model, tokenizer, generation/compare commands, diversity metrics, reports and gate examples remain. All 36 original tests are unchanged. Short contexts now use the same start padding as training. Corrected normalization and padding intentionally change affected sampling or short-prompt outputs; the original fixed greedy/demo assertions still pass.
@@ -38,11 +73,12 @@ Distinct-n, repetition rate and unigram entropy describe output form, not factua
 
 ## Checks
 
-The suite has 54 Python tests, including the 36 original tests. Independent references use 90-digit Decimal sampling powers, rational path products and rational forward probability audits on 40 random tables. Checked-in evidence contains 32 complete tree/beam audits and 120 staged-distribution cases.
+The suite has 59 Python tests, including the 36 original tests and all 54
+tests from the earlier tree/beam audit. Independent references use 90-digit Decimal sampling powers, rational path products and rational forward probability audits on 40 random tables. Checked-in evidence contains 32 complete tree/beam audits and 120 staged-distribution cases.
 
 Three Node/actual-Chrome tests check 7,927 numerical comparisons, 96 distribution views, 231 displayed outcome rows and 956 beam-candidate rows, plus export, stale/invalid state and 320/390/1280 containment. These are floating-point comparisons within documented tolerances, not exact real-arithmetic proofs.
 
-The installed-wheel check runs outside the checkout, verifies five module origins, reproduces 32 table audits and exercises the nucleus/width controls and both audit and original generation commands. CI covers Python 3.10-3.13.
+The installed-wheel check runs outside the checkout, verifies six module origins, reproduces 32 table audits and exercises the nucleus/width controls and both audit and original generation commands. CI covers Python 3.10-3.13.
 
 ```sh
 python -m unittest discover -s tests -v
