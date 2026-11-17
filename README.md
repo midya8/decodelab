@@ -1,8 +1,8 @@
-# DecodeLab
+# Lm decoding
 
-DecodeLab shows how temperature, top-k, top-p and beam search change a small language-model continuation. It retains every sampling stage, finite outcome and beam-pruning decision so that probability, model score and stopping rules can be checked separately. Dependency-free Python and independent scalar JavaScript run offline, without a model API.
+Lm decoding shows how temperature, top-k, top-p and beam search change a small language-model continuation. It retains every sampling stage, finite outcome and beam-pruning decision so that probability, model score and stopping rules can be checked separately. Dependency-free Python and independent scalar JavaScript run offline, without a model API.
 
-[Live inspector](https://midya8.github.io/decodelab/) · [Numerical rules and limits](AUDIT.md)
+[Live inspector](https://midya8.github.io/lm-decoding/) · [Numerical rules and limits](AUDIT.md)
 
 ## Sampling: normalize before selecting a nucleus
 
